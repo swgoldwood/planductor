@@ -20,38 +20,39 @@ if __name__ == "__main__":
     server_addr = (args.host, int(args.port))
 
     while True:
-        socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        client_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     
-        socket.connect(server_addr)
+        client_sock.connect(server_addr)
     
         current_status = {
             'status': 'ready'
         }
     
-        socket.send(json.dumps(current_status))
-        response = json.loads(socket.recv(4096))
+        client_sock.send(json.dumps(current_status))
+        response = json.loads(client_sock.recv(4096))
 
-        if 'name' in response['task'] and response['task']['name'] != None:
+        if response['task'] != None and 'name' in response['task'] and response['task']['name'] != None:
             logging.info("Got task: " + response['task']['name'])
         else:
-            logging.info("No task recieved")
+            logging.info("No task recieved, exiting...")
             sys.exit(0)
 
         #stub - just sleeping for the time being...
-        time.sleep(10)
+        logging.info("Executing task %s (simulating)" % response['task']['name'])
+        time.sleep(response['task']['duration'])
 
         current_status = {
             'status': 'finished',
             'task': {
                 'name': response['task']['name'],
-                'end_time': datetime.datetime.now(),
+                'end_time': str(datetime.datetime.now()),
                 'result': 12.52
             }
         }
 
-        socket.send(json.dumps(current_status))
-        response = socket.recv(4096)
+        client_sock.send(json.dumps(current_status))
+        response = client_sock.recv(4096)
 
         logging.info("Server Response: " + response)
 
-        socket.close()
+        client_sock.close()

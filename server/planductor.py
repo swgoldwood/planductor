@@ -8,146 +8,174 @@ import socket
 import select
 import logging
 import json
+
+from dateutil import parser
 ########################################################
 
 #putting stub entries for experimentation
-tasks = [
-    {
-        'name': 'task1',
-        'planner': 'bsg001',
-        'domain': 'city',
-        'problem': 'deliveries1',
-        'duration': 60,
-        'start_time': None,
-        'expected_end_time': None,
-        'host': None,
-        'complete': False
-    },
-    {
-        'name': 'task2',
-        'planner': 'bsg001',
-        'domain': 'city',
-        'problem': 'deliveries2',
-        'duration': 60,
-        'start_time': None,
-        'expected_end_time': None,
-        'host': None,
-        'complete': False
-    }
-]
 
-# ----------------------------------------------
+class ClientHandler:
+    ''' Listens to clients and responds appropriately '''
 
-def add_new_client(socket, client_list):
-    client_sock, addr = socket.accept()
-    logging.info("New client %s:%i" % addr)
-    client_list.append(client_sock)
+    def __init__(self, port=30714, host='localhost'):
+        self.addr = (host, port)
+        self.CLIENT_LIST = []
+        self.tasks = [
+            {
+                'name': 'task1',
+                'planner': 'bsg001',
+                'domain': 'city',
+                'problem': 'deliveries1',
+                'duration': 30,
+                'start_time': None,
+                'expected_end_time': None,
+                'host': None,
+                'complete': False
+            },
+            {
+                'name': 'task2',
+                'planner': 'bsg001',
+                'domain': 'city',
+                'problem': 'deliveries2',
+                'duration': 30,
+                'start_time': None,
+                'expected_end_time': None,
+                'host': None,
+                'complete': False
+            }
+        ]
 
-# ----------------------------------------------
+    # ----------------------------------------------
 
-def handle_existing_client(socket, client_list):
-    logging.info("Handling existing client")
+    def listen(self):
+        server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        logging.info("Binding address %s:%i" % self.addr)
 
-    data = None
-    try:
-        data = socket.recv(4096)
-        logging.info("Recieved client data: " + data)
-    except socket.error as msg:
-        logging.error('recv failed, Error Code: ' + str(msg[0]) + ' Message ' + msg[1])
-        socket.close()
-        client_list.remove(socket)
-        return
+        try:
+            server_sock.bind(self.addr)
+        except socket.error as msg:
+            logging.error('Bind failed, Error Code: ' + str(msg[0]) + ' Message ' + msg[1])
+            return False
 
-    #client has closed connection
-    if data == "":
-        logging.info("Removing client %s:%i because socket is closed" % socket.getpeername())
-        socket.close()
-        client_list.remove(socket)
-        return
+        logging.info('Now waiting for client connections')
+        server_sock.listen(10)
 
-    client_message = json.loads(data)
+        self.CLIENT_LIST.append(server_sock)
 
-    if client_message['status'] == 'ready':
-        logging.info('Client %s:%i is ready, finding available task' % socket.getpeername())
-        send_client_task(socket)
-    elif client_message['status'] == 'finished':
-        logging.info('Client %s:%i has finished task' % socket.getpeername())
-        set_tasks(client_message, socket)
-    else:
-        logging.info('Client is current status is: ' + client_message['status'])
-        socket.send(json.dumps({'status': 'ok'}))
+        while True:
+            read_sockets, write_sockets, error_sockets = select.select(self.CLIENT_LIST, [], [])
 
-# ----------------------------------------------
+            for sock in read_sockets:
+                # if the server socket is ready, there must be new client to handle
+                if sock == server_sock:
+                    self.add_new_client(sock)
+                # must be a current client communicating
+                else:
+                    self.handle_existing_client(sock)
 
-def send_client_task(socket):
-    task = find_available_task(socket)
+        server_sock.close()
 
-    if task == None:
-        logging.info('Could not find any available tasks for %s:%i' % socket.getpeername())
-        notify_client(socket, {'status':'ok', 'task': None})
+    # ----------------------------------------------
 
-    socket.send(json.dumps({'status':'ok', 'task':task}))
+    def add_new_client(self, sock):
+        client_sock, addr = sock.accept()
+        logging.info("New client %s:%i" % addr)
+        self.CLIENT_LIST.append(client_sock)
 
-# ----------------------------------------------
+    # ----------------------------------------------
 
-def find_available_task(socket):
-    for task in tasks:
-        if not task['complete'] and task['host'] == None:
-            task['host'] = socket.getpeername()
-            return task
+    def handle_existing_client(self, sock):
+        logging.info("Handling existing client" % sock.getpeername())
 
-    return None
+        data = None
+        try:
+            data = sock.recv(4096)
+            logging.debug("Recieved client data: " + data)
+        except socket.error as msg:
+            logging.error('recv failed, Error Code: ' + str(msg[0]) + ' Message ' + msg[1])
+            sock.close()
+            self.CLIENT_LIST.remove(sock)
+            return
 
-# ----------------------------------------------
+        #client has closed connection
+        if data == "":
+            logging.debug("Removing client %s:%i because socket is closed" % sock.getpeername())
+            sock.close()
+            self.CLIENT_LIST.remove(sock)
+            return
 
-def set_tasks(client_message, socket):
-    logging.info('Task %s has completed with result: %d' % (task['name'], task['result']))
+        client_message = json.loads(data)
 
-    for task in tasks:
-        if task['name'] == client_message['task']['name']:
-            task['complete'] = True
-            task['end_time'] = client_message['task']['end_time']
-            task['result'] = client_message['task']['result']
+        #handles client based on status returned
+        if client_message['status'] == 'ready':
+            logging.info('Client %s:%i is ready, finding available task' % sock.getpeername())
+            self.send_client_task(sock)
+        elif client_message['status'] == 'finished':
+            logging.info('Client %s:%i has finished task' % sock.getpeername())
+            self.set_tasks(client_message, sock)
+        else:
+            logging.info('Client is current status is: ' + client_message['status'])
+            sock.send(json.dumps({'status': 'ok'}))
 
-    notify_client(socket, {'status': 'ok'})
+    # ----------------------------------------------
 
-# ----------------------------------------------
+    def send_client_task(self, sock):
+        task = self.find_available_task(sock)
 
-def notify_client(socket, message):
-    json_message = json.dumps(message)
-    socket.send(json_message)
+        if task == None:
+            logging.info('Could not find any available tasks for %s:%i' % sock.getpeername())
+            self.notify_client(sock, {'status':'ok', 'task': None})
 
-# ----------------------------------------------
+        sock.send(json.dumps({'status':'ok', 'task':task}))
+
+    # ----------------------------------------------
+
+    def find_available_task(self, sock):
+        for task in self.tasks:
+            if not task['complete'] and task['host'] == None:
+                task['host'] = sock.getpeername()
+                return task
+
+        return None
+
+    # ----------------------------------------------
+
+    def set_tasks(self, client_message, sock):
+        logging.info('Task %s has completed with result: %d' % (client_message['task']['name'], client_message['task']['result']))
+
+        found_task = False
+
+        for task in self.tasks:
+            if task['name'] == client_message['task']['name']:
+                found_task = True
+                task['complete'] = True
+                task['end_time'] = parser.parse(client_message['task']['end_time'])
+                task['result'] = client_message['task']['result']
+
+        if not found_task:
+            logging.error("Can't find task '%s' recieved from client" % task['task']['name'])
+
+        self.notify_client(sock, {'status': 'ok'})
+
+    # ----------------------------------------------
+
+    def notify_client(self, sock, message):
+        json_message = json.dumps(message)
+        sock.send(json_message)
+
 
 ########################################################
+
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO)
+    parser = argparse.ArgumentParser()
+    parser.add_arguments('--debug')
+    args = parser.parse_args()
 
-    server_addr = ('localhost', 30914)
-    CONNECTION_LIST = []
+    if args.debug:
+        logging.basicConfig(level=logging.DEBUG)
+    else:
+        logging.basicConfig(level=logging.INFO)
 
-    server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    logging.info("Binding address %s:%i" % server_addr)
+    client_handler = ClientHandler()
+    client_handler.listen()
 
-    try:
-        server_sock.bind(server_addr)
-    except socket.error as msg:
-        logging.error('Bind failed, Error Code: ' + str(msg[0]) + ' Message ' + msg[1])
-        sys.exit()
-
-    server_sock.listen(10)
-
-    CONNECTION_LIST.append(server_sock)
-
-    while True:
-        read_sockets, write_sockets, error_sockets = select.select(CONNECTION_LIST, [], [])
-
-        for sock in read_sockets:
-            # if socket ready is the server socket, there must be new client to handle
-            if sock == server_sock:
-                add_new_client(sock, CONNECTION_LIST)
-            # must be a current client communicating
-            else:
-                handle_existing_client(sock, CONNECTION_LIST)
-
-    server_sock.close()
