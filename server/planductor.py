@@ -12,8 +12,6 @@ import json
 from dateutil import parser
 ########################################################
 
-#putting stub entries for experimentation
-
 class ClientHandler:
     ''' Listens to clients and responds appropriately '''
 
@@ -22,26 +20,28 @@ class ClientHandler:
         self.CLIENT_LIST = []
         self.tasks = [
             {
-                'name': 'task1',
-                'planner': 'bsg001',
-                'domain': 'city',
-                'problem': 'deliveries1',
-                'duration': 30,
+                'name': 'lama driverlog 1',
+                'planner': '/dcs/research/ais/planning/planners-64bit/seq-sat-lama-2011/plan',
+                'domain': '/dcs/research/ais/planning/domains/driverlog/domain.pddl',
+                'problem': '/dcs/research/ais/planning/domains/driverlog/pfile09.pddl',
+                'duration': 60,
                 'start_time': None,
                 'expected_end_time': None,
                 'host': None,
-                'complete': False
+                'complete': False,
+                'results': None
             },
             {
-                'name': 'task2',
-                'planner': 'bsg001',
-                'domain': 'city',
-                'problem': 'deliveries2',
-                'duration': 30,
+                'name': 'lama driverlog 2',
+                'planner': '/dcs/research/ais/planning/planners-64bit/seq-sat-lama-2011/plan',
+                'domain': '/dcs/research/ais/planning/domains/driverlog/domain.pddl',
+                'problem': '/dcs/research/ais/planning/domains/driverlog/pfile10.pddl',
+                'duration': 60,
                 'start_time': None,
                 'expected_end_time': None,
                 'host': None,
-                'complete': False
+                'complete': False,
+                'results': None
             }
         ]
 
@@ -85,7 +85,6 @@ class ClientHandler:
     # ----------------------------------------------
 
     def handle_existing_client(self, sock):
-        logging.info("Handling existing client" % sock.getpeername())
 
         data = None
         try:
@@ -103,6 +102,8 @@ class ClientHandler:
             sock.close()
             self.CLIENT_LIST.remove(sock)
             return
+
+        logging.info("Handling existing client %s:%i" % sock.getpeername())
 
         client_message = json.loads(data)
 
@@ -134,6 +135,7 @@ class ClientHandler:
         for task in self.tasks:
             if not task['complete'] and task['host'] == None:
                 task['host'] = sock.getpeername()
+                logging.info("Found task %s for client %s:%i" % (task['name'], task['host'][0], task['host'][1]))
                 return task
 
         return None
@@ -141,7 +143,7 @@ class ClientHandler:
     # ----------------------------------------------
 
     def set_tasks(self, client_message, sock):
-        logging.info('Task %s has completed with result: %d' % (client_message['task']['name'], client_message['task']['result']))
+        logging.info('Task %s has completed' % client_message['task']['name'])
 
         found_task = False
 
@@ -150,7 +152,7 @@ class ClientHandler:
                 found_task = True
                 task['complete'] = True
                 task['end_time'] = parser.parse(client_message['task']['end_time'])
-                task['result'] = client_message['task']['result']
+                task['results'] = client_message['task']['results']
 
         if not found_task:
             logging.error("Can't find task '%s' recieved from client" % task['task']['name'])
@@ -167,15 +169,20 @@ class ClientHandler:
 ########################################################
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
-    parser.add_arguments('--debug')
-    args = parser.parse_args()
+    arg_parser = argparse.ArgumentParser()
+    arg_parser.add_argument('--debug')
+    arg_parser.add_argument('--port')
+    args = arg_parser.parse_args()
 
     if args.debug:
         logging.basicConfig(level=logging.DEBUG)
     else:
         logging.basicConfig(level=logging.INFO)
 
-    client_handler = ClientHandler()
+    PORT = 37014
+    if args.port:
+        PORT = int(args.port)
+
+    client_handler = ClientHandler(port=PORT)
     client_handler.listen()
 
