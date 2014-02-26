@@ -12,11 +12,16 @@ import time
 import sys
 import os
 import re
+import pprint
 
 import threading
 import subprocess
 import traceback
 import shlex
+import tarfile
+
+from urllib2 import urlopen, URLError, HTTPError
+
 ########################################################
   
 class Command(object):
@@ -68,6 +73,7 @@ class Command(object):
         os.chdir(saved_dir)
 
         return self.status, self.output, self.error
+
 
 ########################################################
 
@@ -128,6 +134,52 @@ class Experiment:
 
 ########################################################
 
+def dlfile(url, file_name):
+    # Open the url
+    try:
+        f = urlopen(url)
+        logging.info("downloading " + url)
+
+        # Open our local file for writing
+        with open(file_name, "wb") as local_file:
+            local_file.write(f.read())
+
+    #handle errors
+    except HTTPError, e:
+        logging.error("HTTP Error: %s, %s" % (e.code, url))
+    except URLError, e:
+        logging.error("URL Error: %s, %s" % (e.reason, url))
+
+
+def resolve_dependencies(web_url, dependencies):
+    temp_dir = "/tmp/dependencies_" + str(int(time.time()))
+    os.mkdir(temp_dir)
+
+    logging.info("Temp dir: %s" % temp_dir)
+
+    #resolve planner
+    planner_dir = temp_dir + "/planner"
+    os.mkdir(planner_dir)
+    planner_tar = planner_dir + "/planner.tar"
+
+    dlfile(web_url + dependencies['planner'], planner_tar)
+    logging.info("Unpacking planner tarball %s" % planner_tar)
+    tarfile.open(planner_tar).extractall(planner_dir)
+    os.remove(planner_tar)
+
+    #resolve domain
+    domain_dir = temp_dir + "/domain"
+    os.mkdir(domain_dir)
+    domain_tar = domain_dir + "/domain.tar"
+
+    dlfile(web_url + dependencies['domain'], domain_tar)
+    logging.info("Unpacking domain tarball %s" % domain_tar)
+    tarfile.open(domain_tar).extractall(domain_dir)
+    os.remove(domain_tar)
+
+    return temp_dir, planner_dir, domain_dir
+
+
 def validate_results(experiment):
     results_found = find_results(experiment.result_file)
     results_score = []
@@ -181,10 +233,17 @@ def validate_result(experiment, result):
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
+    pp = pprint.PrettyPrinter(indent=2)
+
     parser = argparse.ArgumentParser()
     parser.add_argument('--host', required=True)
     parser.add_argument('--port', required=True)
+    parser.add_argument('--webport', nargs='?', type=int, default=80)
     args = parser.parse_args()
+
+    web_url = "http://" + args.host
+    if args.webport != 80:
+        web_url = web_url + ":" + str(args.webport)
     
     server_addr = (args.host, int(args.port))
 
@@ -200,51 +259,46 @@ if __name__ == "__main__":
         }
     
         client_sock.send(json.dumps(current_status))
-        raw_data = client_sock.recv(4096)
+        raw_data = client_sock.recv(1048576)
 
         if raw_data == "":
             logging.error("Server connection failed")
             sys.exit(1)
 
+        logging.info(raw_data)
+
         response = json.loads(raw_data)
 
-        if response['task'] != None and 'name' in response['task'] and response['task']['name'] != None:
-            logging.info("Got task: " + response['task']['name'])
-        else:
-            logging.info("No task recieved, exiting...")
-            sys.exit(0)
+        if response['status'] == 'ok':
 
-        experiment = Experiment(response['task']['planner'], response['task']['domain'], response['task']['problem'], response['task']['duration'])
+            temp_dir, planner_dir, domain_dir = resolve_dependencies(web_url, response['dependencies'])
 
-        #command = Command(experiment.get_cmd())
+            planner_plan = planner_dir + "/plan"
+            domain_pddl = domain_dir + "/domain.pddl"
+            problem_pddl = domain_dir + "/pfile%02d.pddl" % response['dependencies']['problem_number']
 
-        #command.run(timeout=experiment.duration)
+            experiment = Experiment(planner_plan, domain_pddl, problem_pddl, 30) #will be 1800 in future (30 minutes)
 
-        #if command.status != 0:
-        #    logging.error("Command failed!")
-        #else:
-        #    logging.info("Command succeeded!")
+            results_array = execute_experiment(experiment)
 
-        results_array = execute_experiment(experiment)
+            logging.info("Printing scores")
 
-        logging.info("Printing scores")
+            for res in results_array:
+                print res['name'] + ": " + str(res['score'])
 
-        for res in results_array:
-            print res['name'] + ": " + str(res['score'])
-
-        current_status = {
-            'status': 'finished',
-            'task': {
-                'name': response['task']['name'],
-                'end_time': str(datetime.datetime.now()),
-                'results': results_array
+            current_status = {
+                'status': 'complete',
+                'task': {
+                    'name': response['task']['name'],
+                    'end_time': str(datetime.datetime.now()),
+                    'results': results_array
+                }
             }
-        }
 
-        client_sock.send(json.dumps(current_status))
-        response = client_sock.recv(4096)
+            client_sock.send(json.dumps(current_status))
+            response = client_sock.recv(4096)
 
-        logging.info("Server Response: " + response)
+            logging.info("Server Response: " + response)
 
         client_sock.close()
 
