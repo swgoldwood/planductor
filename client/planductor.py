@@ -83,7 +83,7 @@ def execute_experiment(experiment):
         os.makedirs(experiment.sandbox)
 
     #build cmd string and execute planner
-    ulimit_cmd = "ulimit -v 400000; " + "ulimit -t %d" % experiment.duration + ";"
+    ulimit_cmd = "ulimit -v 400000; " + "ulimit -t %d" % experiment.duration + "; cd %s;" % os.path.dirname(experiment.planner)
     mbox_cmd = os.path.dirname(os.path.abspath(__file__)) + "/dependencies/mbox"
     main_cmd = ulimit_cmd + " " +  mbox_cmd + " -i -r " +\
         experiment.sandbox + " -- " + experiment.get_cmd()
@@ -97,12 +97,14 @@ def execute_experiment(experiment):
 
     logging.info("Planner executed with return code %s, for %s of limit %s seconds" % (rc, total_time, experiment.duration))
 
-    if total_time < experiment.duration:
-        logging.error("The planner exited with bad return code and only ran for %s seconds. Check logs!" % total_time)
-    else:
-        logging.info("Planner execution looks good!")
+    #check if returned any results
 
-    return validate_results(experiment)
+    #if ran for less than x seconds and no results found then there was probably an error?
+
+    if rc == 0:
+        return True
+    else:
+        return False
 
 
 ########################################################
@@ -124,7 +126,7 @@ class Experiment:
     # ----------------------------------------------
 
     def get_cmd(self):
-        return self.planner + " " + self.domain + " " + self.problem + " " + self.result_file
+        return "./plan " + self.domain + " " + self.problem + " " + self.result_file
 
     # ----------------------------------------------
 
@@ -181,7 +183,7 @@ def resolve_dependencies(web_url, dependencies):
 
 
 def validate_results(experiment):
-    results_found = find_results(experiment.result_file)
+    results_found = find_results(experiment.sandbox + "/" + experiment.result_file)
     results_score = []
     
     for result in results_found:
@@ -209,8 +211,6 @@ def find_results(result_name):
             if re.match('^%s\.\d+$' % os.path.basename(result_name), filename):
                 logging.info("Found result file %s" % os.path.dirname(result_name) + '/' + filename)
                 results.append(os.path.dirname(result_name) + '/' + filename)
-        logging.info("DONE finding results...")
-    logging.info("REALLY DONE")
     return results
 
 
@@ -252,6 +252,7 @@ if __name__ == "__main__":
     while True:
         client_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     
+        logging.info("Connecting to %s:%i" % server_addr)
         client_sock.connect(server_addr)
     
         current_status = {
@@ -279,7 +280,11 @@ if __name__ == "__main__":
 
             experiment = Experiment(planner_plan, domain_pddl, problem_pddl, 30) #will be 1800 in future (30 minutes)
 
-            results_array = execute_experiment(experiment)
+            if not execute_experiment(experiment):
+                logging.error("Execution failed")
+                sys.exit(1)
+
+            results_array = validate_results(experiment)
 
             logging.info("Printing scores")
 
