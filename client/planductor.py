@@ -77,6 +77,11 @@ class Command(object):
 
 ########################################################
 
+class DependencyException(Exception):
+    pass
+
+########################################################
+
 def execute_experiment(experiment):
     #create sandbox diretory for mbox
     if not os.path.exists(experiment.sandbox):
@@ -149,8 +154,12 @@ def dlfile(url, file_name):
     #handle errors
     except HTTPError, e:
         logging.error("HTTP Error: %s, %s" % (e.code, url))
+        return False
     except URLError, e:
         logging.error("URL Error: %s, %s" % (e.reason, url))
+        return False
+
+    return True
 
 
 def resolve_dependencies(web_url, dependencies):
@@ -164,7 +173,9 @@ def resolve_dependencies(web_url, dependencies):
     os.mkdir(planner_dir)
     planner_tar = planner_dir + "/planner.tar"
 
-    dlfile(web_url + dependencies['planner'], planner_tar)
+    if not dlfile(web_url + dependencies['planner'], planner_tar):
+        raise DependencyException("Unable to download planner dependency from web server")
+
     logging.info("Unpacking planner tarball %s" % planner_tar)
     tarfile.open(planner_tar).extractall(planner_dir)
     os.remove(planner_tar)
@@ -174,7 +185,9 @@ def resolve_dependencies(web_url, dependencies):
     os.mkdir(domain_dir)
     domain_tar = domain_dir + "/domain.tar"
 
-    dlfile(web_url + dependencies['domain'], domain_tar)
+    if not dlfile(web_url + dependencies['domain'], domain_tar):
+        raise DependencyException("Unable to download domain dependency from web server")
+
     logging.info("Unpacking domain tarball %s" % domain_tar)
     tarfile.open(domain_tar).extractall(domain_dir)
     os.remove(domain_tar)
@@ -185,13 +198,17 @@ def resolve_dependencies(web_url, dependencies):
 def validate_results(experiment):
     results_found = find_results(experiment.sandbox + "/" + experiment.result_file)
     results_score = []
+
+    sorted(results_found, key=lambda res: int(res[-1]))
     
     for result in results_found:
-        valid, score = validate_result(experiment, result)
+        valid, score, output = validate_result(experiment, result)
 
         result_dict = {
             'name': result,
-            'valid': valid
+            'result_number': int(result[-1]),
+            'valid': valid,
+            'output': output
         }
 
         if not valid:
@@ -215,17 +232,18 @@ def find_results(result_name):
 
 
 def validate_result(experiment, result):
-    cmd = "/dcs/research/ais/planning/planners/validate -t 0.001 %s %s %s" % (experiment.domain, experiment.problem, result)
+    validate_path = os.path.dirname(os.path.abspath(__file__)) + "/dependencies/validate"
+    cmd = "%s -t 0.001 %s %s %s" % (validate_path, experiment.domain, experiment.problem, result)
     output = subprocess.check_output(cmd, shell=True)
     output_lines = output.split("\n")
 
     if output_lines[2] != "Plan valid":
-        return False, -1
+        return False, -1, output
 
     match = re.search("(\d+)$", output_lines[6])
     score = int(match.group(1))
 
-    return True, score
+    return True, score, output
 
 
 ########################################################
@@ -260,7 +278,15 @@ if __name__ == "__main__":
         }
     
         client_sock.send(json.dumps(current_status))
-        raw_data = client_sock.recv(1048576)
+
+        raw_data = ""
+
+        try:
+            raw_data = client_sock.recv(1048576)
+        except socket.error as e:
+            logging.error("Error with socket connection, machine IP address might not be trusted in database")
+            logging.info(pp.pformat(e))
+            sys.exit(1)
 
         if raw_data == "":
             logging.error("Server connection failed")
@@ -270,9 +296,17 @@ if __name__ == "__main__":
 
         response = json.loads(raw_data)
 
-        if response['status'] == 'ok':
+        if response['status'] == 'ok' and response['task_id'] == None:
+            logging.info("No available tasks")
+        elif response['status'] == 'ok':
 
-            temp_dir, planner_dir, domain_dir = resolve_dependencies(web_url, response['dependencies'])
+            temp_dir = planner_dir = domain_dir = ""
+            try:
+                temp_dir, planner_dir, domain_dir = resolve_dependencies(web_url, response['dependencies'])
+            except DependencyException as e:
+                logging.error("Problem resolving dependencies")
+                logging.info(pp.pformat(e))
+                sys.exit(1)
 
             planner_plan = planner_dir + "/plan"
             domain_pddl = domain_dir + "/domain.pddl"
@@ -289,19 +323,19 @@ if __name__ == "__main__":
             logging.info("Printing scores")
 
             for res in results_array:
-                print res['name'] + ": " + str(res['score'])
+                logging.info(pp.pformat(res))
 
             current_status = {
                 'status': 'complete',
                 'task': {
-                    'name': response['task']['name'],
+                    'task_id': response['task_id'],
                     'end_time': str(datetime.datetime.now()),
                     'results': results_array
                 }
             }
 
             client_sock.send(json.dumps(current_status))
-            response = client_sock.recv(4096)
+            response = client_sock.recv(1048576)
 
             logging.info("Server Response: " + response)
 
