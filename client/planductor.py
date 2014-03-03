@@ -202,20 +202,26 @@ def validate_results(experiment):
     sorted(results_found, key=lambda res: int(res[-1]))
     
     for result in results_found:
-        valid, score, output = validate_result(experiment, result)
+        valid, score, validation_output = validate_result(experiment, result)
+
+        output = ""
+
+        with open(result, 'r') as result_file:
+            output = result_file.read()
 
         result_dict = {
             'name': result,
             'result_number': int(result[-1]),
-            'valid': valid,
-            'output': output
+            'score': score,
+            'output': output,
+            'valid_plan': valid,
+            'validation_output': validation_output,
         }
 
         if not valid:
-            logging.error("Found invalid result: %s" % result)
-        else:
-            result_dict['score'] = score
-            results_score.append(result_dict)
+            logging.info("Found invalid result: %s" % result)
+
+        results_score.append(result_dict)
 
     return results_score
 
@@ -268,7 +274,14 @@ if __name__ == "__main__":
     print os.path.abspath(__file__)
 
     while True:
-        client_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        client_sock = None
+
+        try:
+            client_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        except socket.error as e:
+            logging.info("Cannot connect to %i:%i, probably down" % server_addr)
+            logging.error(pp.pformat(e))
+            sys.exit(1)
     
         logging.info("Connecting to %s:%i" % server_addr)
         client_sock.connect(server_addr)
@@ -333,6 +346,9 @@ if __name__ == "__main__":
                     'results': results_array
                 }
             }
+
+            logging.info("SENDING RESULTS")
+            logging.info(pp.pformat(current_status))
 
             client_sock.send(json.dumps(current_status))
             response = client_sock.recv(1048576)
