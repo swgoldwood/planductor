@@ -126,17 +126,24 @@ class Experiment:
         self.sandbox = "/tmp/sandbox-" + str(int(time.time()))
         self.result_file = "/tmp/planner-results"
         self.real_result_file = self.sandbox + self.result_file
+        self.output_file = "/tmp/planner-output"
         self.results = []
 
     # ----------------------------------------------
 
     def get_cmd(self):
-        return "./plan " + self.domain + " " + self.problem + " " + self.result_file
+        return "./plan " + self.domain + " " + self.problem + " " + self.result_file + " > " + self.output_file
 
     # ----------------------------------------------
 
-    def get_results(self):
-        logging.info("Getting results for experiment. Result files in form of %s*" % self.result_file)
+    def get_output(self):
+        logging.info("Getting execution output")
+
+        output = ""
+        with open(self.output_file, 'r') as output_file:
+          output = output_file.read()
+
+        return output
 
 
 ########################################################
@@ -343,6 +350,7 @@ if __name__ == "__main__":
                 'task': {
                     'task_id': response['task_id'],
                     'end_time': str(datetime.datetime.now()),
+                    'output': experiment.get_output(),
                     'results': results_array
                 }
             }
