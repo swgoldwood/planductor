@@ -204,22 +204,22 @@ def resolve_dependencies(web_url, dependencies):
 
 def validate_results(experiment):
     results_found = find_results(experiment.sandbox + "/" + experiment.result_file)
-    results_score = []
+    results = []
 
     sorted(results_found, key=lambda res: int(res[-1]))
     
     for result in results_found:
-        valid, score, validation_output = validate_result(experiment, result)
+        valid, quality, validation_output = validate_result(experiment, result)
 
         output = ""
 
         with open(result, 'r') as result_file:
             output = result_file.read()
 
-        result_dict = {
+        result = {
             'name': result,
             'result_number': int(result[-1]),
-            'score': score,
+            'quality': quality,
             'output': output,
             'valid_plan': valid,
             'validation_output': validation_output,
@@ -228,9 +228,9 @@ def validate_results(experiment):
         if not valid:
             logging.info("Found invalid result: %s" % result)
 
-        results_score.append(result_dict)
+        results.append(result_dict)
 
-    return results_score
+    return results
 
 
 def find_results(result_name):
@@ -254,9 +254,9 @@ def validate_result(experiment, result):
         return False, -1, output
 
     match = re.search("(\d+)$", output_lines[6])
-    score = int(match.group(1))
+    quality = int(match.group(1))
 
-    return True, score, output
+    return True, quality, output
 
 
 ########################################################
@@ -340,7 +340,7 @@ if __name__ == "__main__":
 
             results_array = validate_results(experiment)
 
-            logging.info("Printing scores")
+            logging.info("Printing results")
 
             for res in results_array:
                 logging.info(pp.pformat(res))
