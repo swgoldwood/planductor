@@ -19,61 +19,9 @@ import subprocess
 import traceback
 import shlex
 import tarfile
+import shutil
 
 from urllib2 import urlopen, URLError, HTTPError
-
-########################################################
-  
-class Command(object):
-    """
-    Enables to run subprocess commands in a different thread with TIMEOUT option.
-    """
-
-    command = None
-    process = None
-    status = None
-    output, error = '', ''
-
-    def __init__(self, command):
-        if isinstance(command, basestring):
-            command = shlex.split(command)
-        self.command = command
-
-    # ----------------------------------------------
-
-    def run(self, timeout=None, **kwargs):
-        """ Run a command then return: (status, output, error). """
-        def target(**kwargs):
-            logging.info("Executing: " + self.command.__str__())
-            try:
-                self.process = subprocess.Popen(self.command, **kwargs)
-                self.output, self.error = self.process.communicate()
-                self.status = self.process.returncode
-            except:
-                self.error = traceback.format_exc()
-                self.status = -1
-
-        # default stdout and stderr
-        if 'stdout' not in kwargs:
-            kwargs['stdout'] = subprocess.PIPE
-        if 'stderr' not in kwargs:
-            kwargs['stderr'] = subprocess.PIPE
-
-        saved_dir = os.getcwd()
-        os.chdir("/tmp")
-
-        # thread
-        thread = threading.Thread(target=target, kwargs=kwargs)
-        thread.start()
-        thread.join(timeout)
-        if thread.is_alive():
-            self.process.terminate()
-            thread.join()
-
-        os.chdir(saved_dir)
-
-        return self.status, self.output, self.error
-
 
 ########################################################
 
@@ -228,7 +176,7 @@ def validate_results(experiment):
         if not valid:
             logging.info("Found invalid result: %s" % result)
 
-        results.append(result_dict)
+        results.append(result)
 
     return results
 
@@ -259,6 +207,12 @@ def validate_result(experiment, result):
     return True, quality, output
 
 
+def clear_temporary_files(directories):
+    for directory in directories:
+        logging.info("Removing directory tree %s" % directory)
+        shutil.rmtree(directory)
+
+
 ########################################################
 
 if __name__ == "__main__":
@@ -283,15 +237,16 @@ if __name__ == "__main__":
     while True:
         client_sock = None
 
-        try:
-            client_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        except socket.error as e:
-            logging.info("Cannot connect to %i:%i, probably down" % server_addr)
-            logging.error(pp.pformat(e))
-            sys.exit(1)
+        client_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     
         logging.info("Connecting to %s:%i" % server_addr)
-        client_sock.connect(server_addr)
+
+        try:
+            client_sock.connect(server_addr)
+        except socket.error as e:
+            logging.info("Cannot connect to %s:%i, probably down" % server_addr)
+            logging.error(pp.pformat(e))
+            sys.exit(1)
     
         current_status = {
             'status': 'ready'
@@ -331,8 +286,12 @@ if __name__ == "__main__":
             planner_plan = planner_dir + "/plan"
             domain_pddl = domain_dir + "/domain.pddl"
             problem_pddl = domain_dir + "/pfile%02d.pddl" % response['dependencies']['problem_number']
+            cpu_time = 1800
 
-            experiment = Experiment(planner_plan, domain_pddl, problem_pddl, 30) #will be 1800 in future (30 minutes)
+            if 'cpu_time' in response:
+                cpu_time = response['cpu_time']
+
+            experiment = Experiment(planner_plan, domain_pddl, problem_pddl, cpu_time) #will be 1800 in future (30 minutes)
 
             if not execute_experiment(experiment):
                 logging.error("Execution failed")
@@ -345,24 +304,36 @@ if __name__ == "__main__":
             for res in results_array:
                 logging.info(pp.pformat(res))
 
-            current_status = {
-                'status': 'complete',
-                'task': {
-                    'task_id': response['task_id'],
-                    'end_time': str(datetime.datetime.now()),
-                    'output': experiment.get_output(),
-                    'results': results_array
+            #sending complete message to server
+            send_request = {'status': 'complete'}
+            client_sock.send(json.dumps(send_request))
+            raw_data = client_sock.recv(1048576)
+            new_response = json.loads(raw_data)
+
+            #server is ready to receive response, sending now
+            if new_response['status'] == 'ok':
+                logging.info("Server is read to receive results, sending now")
+
+                current_status = {
+                    'status': 'complete',
+                    'task': {
+                        'task_id': response['task_id'],
+                        'end_time': str(datetime.datetime.now()),
+                        'output': experiment.get_output(),
+                        'results': results_array
+                    }
                 }
-            }
 
-            logging.info("SENDING RESULTS")
-            logging.info(pp.pformat(current_status))
+                current_status_json = json.dumps(current_status)
 
-            client_sock.send(json.dumps(current_status))
-            response = client_sock.recv(1048576)
+                logging.info("SENDING RESULTS")
+                logging.info(current_status_json)
 
-            logging.info("Server Response: " + response)
+                client_sock.send(current_status_json)
+            
+            clear_temporary_files([experiment.sandbox, temp_dir])
 
         client_sock.close()
 
-        sys.exit(0)
+        logging.info("Waiting 30 seconds before requesting task...")
+        time.sleep(30)
