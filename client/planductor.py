@@ -5,6 +5,8 @@
 import datetime
 import argparse
 import socket
+import ssl
+
 import select
 import logging
 import json
@@ -224,6 +226,7 @@ if __name__ == "__main__":
     parser.add_argument('--host', required=True)
     parser.add_argument('--port', required=True)
     parser.add_argument('--webport', nargs='?', type=int, default=80)
+    parser.add_argument('--cert', required=True)
     args = parser.parse_args()
 
     web_url = "http://" + args.host
@@ -235,10 +238,12 @@ if __name__ == "__main__":
     print os.path.abspath(__file__)
 
     while True:
+        plain_sock = None
         client_sock = None
 
-        client_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    
+        plain_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        client_sock = ssl.wrap_socket(plain_sock, ca_certs=args.cert, cert_reqs=ssl.CERT_REQUIRED)
+
         logging.info("Connecting to %s:%i" % server_addr)
 
         try:
@@ -334,6 +339,7 @@ if __name__ == "__main__":
             clear_temporary_files([experiment.sandbox, temp_dir])
 
         client_sock.close()
+        plain_sock.close()
 
         logging.info("Waiting 30 seconds before requesting task...")
         time.sleep(30)
