@@ -226,7 +226,8 @@ if __name__ == "__main__":
     parser.add_argument('--host', required=True)
     parser.add_argument('--port', required=True)
     parser.add_argument('--webport', nargs='?', type=int, default=80)
-    parser.add_argument('--cert', required=True)
+    parser.add_argument('--cert')
+    parser.add_argument('--nossl', action='store_true', default=False)
     args = parser.parse_args()
 
     web_url = "http://" + args.host
@@ -242,7 +243,12 @@ if __name__ == "__main__":
         client_sock = None
 
         plain_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        client_sock = ssl.wrap_socket(plain_sock, ca_certs=args.cert, cert_reqs=ssl.CERT_REQUIRED)
+        
+        if args.nossl:
+            logging.warning("Not using SSL for socket connections")
+            client_sock = plain_sock
+        else:
+            client_sock = ssl.wrap_socket(plain_sock, ca_certs=args.cert, cert_reqs=ssl.CERT_REQUIRED)
 
         logging.info("Connecting to %s:%i" % server_addr)
 
