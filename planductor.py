@@ -224,7 +224,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--host', required=True)
-    parser.add_argument('--port', required=True)
+    parser.add_argument('--port', nargs='?', type=int, default=37123)
     parser.add_argument('--webport', nargs='?', type=int, default=80)
     parser.add_argument('--cert')
     parser.add_argument('--nossl', action='store_true', default=False)
