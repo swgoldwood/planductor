@@ -281,8 +281,10 @@ if __name__ == "__main__":
         logging.info(raw_data)
 
         response = json.loads(raw_data)
+        no_task = False
 
         if response['status'] == 'ok' and response['task_id'] == None:
+            no_task = True
             logging.info("No available tasks")
         elif response['status'] == 'ok':
 
@@ -347,5 +349,6 @@ if __name__ == "__main__":
         client_sock.close()
         plain_sock.close()
 
-        logging.info("Waiting 30 seconds before requesting task...")
-        time.sleep(30)
+        if no_task:
+            logging.info("Waiting 30 seconds before requesting task...")
+            time.sleep(30)
