@@ -52,10 +52,6 @@ def execute_experiment(experiment):
 
     logging.info("Planner executed with return code %s, for %s of limit %s seconds" % (rc, total_time, experiment.duration))
 
-    #check if returned any results
-
-    #if ran for less than x seconds and no results found then there was probably an error?
-
     if rc == 0:
         return True
     else:
@@ -339,7 +335,7 @@ if __name__ == "__main__":
 
                 current_status_json = json.dumps(current_status)
 
-                logging.info("SENDING RESULTS")
+                logging.info("Sending results back to server:")
                 logging.info(current_status_json)
 
                 client_sock.send(current_status_json)
