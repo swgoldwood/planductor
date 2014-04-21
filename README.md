@@ -9,4 +9,4 @@ Steps for setting up Planductor-client:
 
 3. On the client machine, open a terminal session and navigate to planductor-client source directory. Run this command to start the client:
 
-``$ python planductor.py --host=[hostname/IP of Planductor-server] --cert=/path/to/server.crt --webport=3000``
+        python planductor.py --host=[hostname/IP of Planductor-server] --cert=/path/to/server.crt --webport=3000
