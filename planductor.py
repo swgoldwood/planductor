@@ -104,7 +104,7 @@ def dlfile(url, file_name):
         with open(file_name, "wb") as local_file:
             local_file.write(f.read())
 
-    #handle errors
+    #handle HTTP when downloading dependencies
     except HTTPError, e:
         logging.error("HTTP Error: %s, %s" % (e.code, url))
         return False
@@ -114,6 +114,7 @@ def dlfile(url, file_name):
 
     return True
 
+########################################################
 
 def resolve_dependencies(web_url, dependencies):
     temp_dir = "/tmp/dependencies_" + str(int(time.time()))
@@ -147,6 +148,7 @@ def resolve_dependencies(web_url, dependencies):
 
     return temp_dir, planner_dir, domain_dir
 
+########################################################
 
 def validate_results(experiment):
     results_found = find_results(experiment.sandbox + "/" + experiment.result_file)
@@ -178,6 +180,7 @@ def validate_results(experiment):
 
     return results
 
+########################################################
 
 def find_results(result_name):
     results = []
@@ -189,6 +192,7 @@ def find_results(result_name):
                 results.append(os.path.dirname(result_name) + '/' + filename)
     return results
 
+########################################################
 
 def validate_result(experiment, result):
     validate_path = os.path.dirname(os.path.abspath(__file__)) + "/dependencies/validate"
@@ -204,6 +208,7 @@ def validate_result(experiment, result):
 
     return True, quality, output
 
+########################################################
 
 def clear_temporary_files(directories):
     for directory in directories:
