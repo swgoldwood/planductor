@@ -3,7 +3,7 @@ planductor-client
 
 Steps for setting up Planductor-client:
 
-1. Sign-up and Sign-in as an organiser to Planductor-web by visting http://localhost:3000/ clicking the "Sign up" link in the menu bar. Next, navigate to the "Hosts" page through the menu bar. Add the client machine's IP address as a trusted host.
+1. Sign-up and Sign-in as an organiser to Planductor-web (https://github.com/swgoldwood/planductor-web) by visting http://localhost:3000/ clicking the "Sign up" link in the menu bar. Next, navigate to the "Hosts" page through the menu bar. Add the client machine's IP address as a trusted host.
 
 2. Copy the same server.crt generated for Planductor-server onto the client machine.
 
